@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.10";
+$VERSION = "1.50";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -48,6 +48,15 @@ $query = new CGI();
 # Change editing table, if an 'Edit Table: $table' button was pushed
 #
 Change_Edit_Table($query);
+
+# Output header
+#    if ($query->request_method() eq 'GET' || $query->user_agent() !~ /MSIE/ ||
+#	$query->server_software =~ /IIS/) {
+	print $query->header(-type => 'text/html',
+			     -status => '200 OK');
+#}
+#    }
+
 
 #
 # Get cgi parameters as $cgi_param entries to pass on
@@ -67,6 +76,7 @@ if (!PQLogin($query,$cgi_param)) {
 #
 
 my($error_string);
+undef $error_string;		# clear it for global use
 # different handler to check callbacks
 if ($RDBAL::Layer{'SybaseDBlib'} || $RDBAL::Layer{'ApacheSybaseDBlib'}) {
     &Sybase::DBlib::dbmsghandle (\&msg_handler);
@@ -80,9 +90,13 @@ my($logged_in);
 if ( $X = RDBAL::Connect($cgi_param->{'username'},
 			 $cgi_param->{'password'},
 			 $cgi_param->{'server'},
-			 $cgi_param->{'server_type'}) ) {
-    if ( $X->UseDatabase($cgi_param->{'database'})) {
-	$logged_in = 1;
+			 $cgi_param->{'server_type'},
+			 $cgi_param->{'database'})
+    ) {
+    if (defined($X->{'connection'})) {
+	if ( $X->UseDatabase($cgi_param->{'database'})) {
+	    $logged_in = 1;
+	}
     }
 }
 if (!$logged_in) {
@@ -114,10 +128,31 @@ if ($cgi_param->{'no_schemacache'}) {
 }
 
 #
-# Edit table
+# Dump out parameters if in debug mode
 #
-Edit($X,$query,$cgi_param,$SchemaCache->{$cache_item});
+if (defined($query->param('pqdebug'))) {
+    map {
+	$error_string .= "DEBUG> $_ = $cgi_param->{$_}<P>\n";
+    } (sort (keys %$cgi_param));
+    map {
+	if (/pq_/ || /pqsearch_/ || /pqold_/) {
+	    $error_string .= "DEBUG> $_ = ". $query->param($_) . "<P>\n";
+	}
+    } $query->param;
+}
 
+if (defined($query->param('Overview')) ||
+    defined($query->param('overview'))) {
+    #
+    # Show overview table
+    #
+    Overview($X,$query,$cgi_param,$SchemaCache->{$cache_item});
+} else {
+    #
+    # Edit table
+    #
+    Edit($X,$query,$cgi_param,$SchemaCache->{$cache_item});
+}
 exit;
 #=========================================================================
 #
@@ -175,19 +210,162 @@ sub TD_Field_Label {
     my($label);
     my($td_label);
 
-    $field =~ s/_______________/ and_/g;
+    $field =~ s/_____/ and_/g;
     $label = (defined($rlabel->{$field})) ?
 	$rlabel->{$field} : uc_string($field);
     $td_label = '<TD WIDTH="25%" VALIGN="TOP"><p align="right">';
     if ($helppage !~ /^\s*$/) {
 	$td_label .= '<A HREF="'. $helppage .'#'. $field .'">' .
-	    $label . $required . "</A></TD>";
+	    $label . ' ' . $required . "</A></TD>";
     } else {
-	$td_label .= $label . $required . "</TD>";
+	$td_label .= $label . ' ' . $required . "</TD>";
     }
     return $td_label;
 }
 
+#
+# Output CGI forms overview screen
+#
+# Overview($X,$query,$cgi_param,$schema);
+#
+
+sub Overview {
+    my($X) = shift;
+    my($query) = shift;
+    my($cgi_param) = shift;
+    my($schema) = shift;
+    my(%qbe_fields);
+    my(%values);
+    my($table) = $cgi_param->{'table'};
+    my($html_page);
+    my($self_url);
+    my($server) = $cgi_param->{'server'};
+    my($database) = $cgi_param->{'database'};
+    my($fullname) = $server . '.' . $database . '.' . $table;
+    my($body_bgcolor) = (defined($cgi_param->{'web_body_bgcolor'})) ?
+	$cgi_param->{'web_body_bgcolor'} : 'white';
+    my(%value_array);
+    my($array_ref);
+    my($field);
+    my(@primary_keys) = (($schema->Primary_Keys($table) > 0) ?
+			 $schema->Primary_Keys($table) :
+			 $schema->Table_Fields($table));
+    my(%primary_keys);
+    my(@pk_value);
+    my($number_rows);
+    my($pk_value);
+    my($escaped_pk_value);
+    my($value);
+    my(@other_fields);
+    my($other_cells);
+    my($i);
+    my($rlabel);
+    my($rl_field);
+    my($rl_value);
+    my($label);
+    my($target);
+
+    map {
+	$primary_keys{$_} = 1;
+    } @primary_keys;
+    %qbe_fields = qbe_fields($schema,$table);
+    %values = get_values($X,$schema,$table,\%qbe_fields,$query);
+
+    # Delete unneccessary parameters
+    # and find search fields that are not primary keys
+    map {
+	if (/^pqold_/ ||
+	    /^pq_/ ||
+	    /^pqsearch_/) {
+	    $query->delete($_);
+	}
+    } $query->param;
+    $query->delete('Overview');
+    $query->delete('overview');
+
+    map {
+	if (!defined($primary_keys{$_})) {
+	    push @other_fields, ($_);
+	}
+    } $schema->Table_Fields($table);
+    $self_url = $query->self_url;
+    # rearrange into an associative array of references to values arrays
+    foreach $field ($schema->Table_Fields($table)) {
+	$value_array{$field} = [];
+	@pk_value = split("\t",$values{$field});
+	push @{$value_array{$field}}, @pk_value;
+    }
+
+    if (defined($error_string)) {
+	$html_page .= "Database Error: $error_string<P>\n";
+    }
+
+    $html_page .= '<B>To Refresh, </B>' .
+	$query->button(-name => 'refresh',
+		       -value => 'Refresh Search Set View',
+		       -onClick => 'location.reload(true)');
+    $html_page .= "<B> Press the Web Browser's 'Reload' or 'Refresh' button.</B><P>\n";
+    $html_page .= '<TABLE ALIGN="center" BORDER="2">'."\n";
+    undef $i;
+    map {
+	($rl_field, $rl_value) = split(';');
+	$rlabel->{$rl_field} = $rl_value;
+    } split(',',$query->param('labels'));
+    map {
+	$label = (defined($rlabel->{$_})) ? $rlabel->{$_} : uc_string($_);
+	if (!defined($i)) {
+	    $i .= '<TH>'. $label;
+	} else {
+	    $i .= ' and<BR>'. $label;
+	}
+    } @primary_keys;
+    $i .= "</TH>\n";
+    map {
+	$label = (defined($rlabel->{$_})) ? $rlabel->{$_} : uc_string($_);
+	$i .= "<TH>$label</TH>";
+    } @other_fields;
+    $html_page .= "<tr>$i</tr>\n";
+    $target = ($query->param('single_window') eq 'ON') ?
+	'' : " TARGET=\"pqedit$table\"";
+    @pk_value = (@{$value_array{$primary_keys[0]}});
+    $number_rows = $#pk_value;
+    for ($i = 0; $i <= $number_rows;$i++) {
+	undef @pk_value;
+	map {
+	    $array_ref = $value_array{$_};
+	    $value = $$array_ref[$i];
+	    push @pk_value, ($$array_ref[$i]);
+	} @primary_keys;
+	$pk_value = join("\t",@pk_value);
+	$escaped_pk_value = $query->escape($pk_value);
+	undef $other_cells;
+	map {
+	    $array_ref = $value_array{$_};
+	    $value = $$array_ref[$i];
+	    if (!defined($value) || $value =~ /^\s*$/) {
+		$value = '&nbsp;';
+	    }
+	    $other_cells .= "            <td align=\"center\">$value</td>\n";
+	} @other_fields;
+	$html_page .= "
+	<tr>
+	    <td align=\"center\">
+		<A href=\"$self_url&pk_value=$escaped_pk_value\"$target>$pk_value
+                </a>
+            </td>
+            $other_cells
+	</tr>\n";
+    }
+    $html_page .= "</TABLE>\n";
+
+    print $query->start_html(-title => "PQ Edit Overview for $fullname",
+			     -author => 'brian@ibc.wustl.edu',
+			     -BGCOLOR => $body_bgcolor);
+#			     -onload => 'window.setInterval("location.reload(true)", 1500000);'); # Reload page every fifteen minutes
+    print $html_page;
+    print PQHidden_Parameters($query,$cgi_param);
+    print "\n" . $query->end_html;
+}
 
 #
 # Output CGI forms editing screen
@@ -212,6 +390,9 @@ sub Edit {
     my(%selects);
     my($default);
     my($required);
+    my(%replacement_field);
+    my(%readonly_field);
+    my(%nondisplay_field);
     my($server) = $cgi_param->{'server'};
     my($database) = $cgi_param->{'database'};
     my($fullname) = $server . '.' . $database . '.' . $table;
@@ -230,6 +411,8 @@ sub Edit {
     my(%done_tuple);
     my($rl_field);
     my($rl_value);
+    my($table_onclick);
+    my($overview_onclick);
 
     if (!$cgi_param->{'pqdebug'}) {
 	$self_url =~ s/\?.*$//;
@@ -262,11 +445,6 @@ sub Edit {
     %qbe_fields = qbe_fields($schema,$table);
 
     # Output HTML
-#    if ($query->request_method() eq 'GET' || $query->user_agent() !~ /MSIE/ ||
-#	$query->server_software =~ /IIS/) {
-	print $query->header(-type => 'text/html',
-			     -status => '200 OK');
-#    }
     $html_page .= "\n";
 #    $html_page .= '<H1 ALIGN="CENTER">Editing: ' . $fullname . "</H1>\n";
     %lookup_fields = find_lookups($schema,$table);
@@ -287,10 +465,18 @@ sub Edit {
 	$html_page .= "Database Error: $error_string<P>\n";
     }
 
-    $html_page .= $query->start_form(-method => 'POST',
-				     -name =>  "PQEdit",
-				     -onSubmit => "return check_keys()",
-				     -action => $self_url);
+    if ($query->param('single_window') eq 'ON') {
+	$html_page .= $query->start_form(-method => 'POST',
+					 -name =>  "PQEdit",
+					 -onSubmit => "return check_keys()",
+					 -action => $self_url);
+    } else {
+	$html_page .= $query->start_form(-method => 'POST',
+					 -name =>  "PQEdit",
+					 -onSubmit => "return check_keys()",
+					 -action => $self_url,
+					 -target => "pqedit$table");
+    }
     if (defined($query->param('begin_html_include'))) {
 	$html_page .= html_file_include($query->param('begin_html_include'));
     }
@@ -300,10 +486,18 @@ sub Edit {
 	    $col_count = 1;
 	    map {
 		if (!$lookup_tables{$_} && $_ ne $table) {
-		    $html_page .=  "<TD>" .
-			$query->submit(-name => 'edit_lookup',
-				       -value => "Edit Table: $_") .
-					   "</TD>\n";
+			if ($query->param('single_window') eq 'ON') {
+			    $html_page .=  "<TD>" .
+				$query->submit(-name => 'edit_lookup',
+					       -value => "Edit Table: $_") .
+						   "</TD>\n";
+			} else {
+			    $html_page .=  "<TD>" .
+				$query->submit(-name => 'edit_lookup',
+					       -onClick => "this.form.target='pqedit$_'",
+					       -value => "Edit Table: $_") .
+						   "</TD>\n";
+			}
 		    if (++$col_count > 2) {
 			$col_count = 1;
 			$html_page .= "</TR>\n</TR>\n";
@@ -330,12 +524,27 @@ sub Edit {
     }
     $html_page .= '<HR><TABLE BORDER="0" WIDTH="100%" CELLSPACING="0">'."\n";
 
+    # set up onClick string for single window or multi window modes
+    if ($query->param('single_window') eq 'ON') {
+	$table_onclick = '';
+	$overview_onclick = '';
+    } else {
+	$table_onclick = "
+                 onClick=\"this.form.target='pqedit$table'\"";
+	$overview_onclick = "
+                 onClick=\"this.form.target='overview$table'\"";
+    }
     $html_page .= <<"EndHTML";
     <tr>
-      <td colspan="3" align="center"><input TYPE="submit" VALUE="First Entry" NAME="First"
-      tabindex="7" style="background-color: gray"> <input TYPE="submit" VALUE="Retrieve Using Search fields"
-      NAME="retrieve" tabindex="8" style="background-color: gray"> <input TYPE="submit"
-      VALUE="Next Entry &gt;" NAME="Next" tabindex="9" style="background-color: gray">
+      <td colspan="3" align="center">
+          <input TYPE="submit" VALUE="First Entry"$table_onclick
+                 NAME="First" tabindex="7" style="background-color: gray">
+          <input TYPE="submit" VALUE="Search for Entry"$table_onclick
+                 NAME="retrieve" tabindex="8" style="background-color: gray">
+          <input TYPE="submit" VALUE="View Search Set"$overview_onclick
+                 NAME="Overview" tabindex="8" style="background-color: gray">
+          <input TYPE="submit" VALUE="Next Entry &gt;"$table_onclick
+                 NAME="Next" tabindex="9" style="background-color: gray">
       </td>
     </tr>
 EndHTML
@@ -343,18 +552,25 @@ EndHTML
     $html_page .= <<"EndHTML";
     <tr>
       <th colspan=\"2\">
-	  <P ALIGN="LEFT"><BIG>Searchable and Editable Fields:</BIG></P>
+	  <P ALIGN="LEFT"><BIG>Searchable and Editable Fields: </BIG>
+<INPUT TYPE="button" NAME="search_help" VALUE="Help on Searching"
+       STYLE="background-color: gray"
+       ONCLICK="alert('Click on the check marks in front of searchable fields to have them not be used in the search.  In a text search field, use a question mark, ?, to represent any single character.  Use an asterik, *, to represent any string of zero or more characters.  Use brackets, [ ], to enclose a range of characters to match as a single character, such as [a-f], or a set of characters such as [a2Br].  [0-z] matches 0-9, A-Z, and a-z (and several punctuation characters).  The caret, ^, is used to match a single character that is not in a range of characters.  For example, [^a-f] matches any character which is not the letters a through f. ')">
+          </P>
       </th>
-      <th><p align="right"><em>* Required fields.</em></p></th>
+      <th><p align="right"><em>* Required field.</em><BR><em># Leave field blank to autoassign value.</em></p></th>
     </tr>
 EndHTML
-
     undef %done_tuple;
+    %replacement_field = Replacement_Fields($table,$query);
+    %readonly_field = Readonly_Fields($table,$query);
+    %nondisplay_field = Nondisplay_Fields($table,$query,$schema);
     map {
 	$field = $_;
 	if (defined($qbe_fields{$field}) &&
 	    !defined($done_tuple{$field})) {
-	    $required = ($schema->Field_Null($table,$field)) ? '' : '*';
+	    $required = ($replacement_field{$field}) ? '#' :
+		( ($schema->Field_Null($table,$field)) ? '' : '*');
 	    if (defined($multi_lookup_fields{$field})) {
 		($ltable,$lkey,$ldescription) =
 		    split("\t",$lookup_fields{$multi_lookup_fields{$field}});
@@ -362,7 +578,7 @@ EndHTML
 		    get_multi_lookup($X,$cgi_param,$ltable,$lkey,$ldescription);
 		if (defined(%lookup_hash)) {
 		    $multi_field =
-			join('_______________',split(',',$multi_lookup_fields{$field}));
+			join('_____',split(',',$multi_lookup_fields{$field}));
 		    map {
 			$done_tuple{$_} = 1;
 		    } split(',',$multi_lookup_fields{$field});
@@ -377,11 +593,12 @@ EndHTML
 	    }
 	    $td_label = TD_Field_Label($field,$required,$rlabel,$helppage);
 	    $lookup_tables{$ltable} = 1;
-	    if (defined(%lookup_hash) && $required eq '') {
+	    if (defined(%lookup_hash) && $required ne '*') {
 		$lookup_hash{''} = '<Select A Value>';
 	    }
 	    $html_page .= Edit_Row($field,$td_label,$values{$field},$table,
-				   $schema,\%lookup_hash,$cgi_param,$ltable,1);
+				   $schema,\%lookup_hash,$cgi_param,$ltable,1,
+				   \%readonly_field, \%nondisplay_field);
 	    if (defined(%lookup_hash)) {
 		$selects{$field} = 1;
 	    }
@@ -401,7 +618,8 @@ EndHTML
 	$field = $_;
 	if (!defined($qbe_fields{$field}) &&
 	    !defined($done_tuple{$field})) {
-	    $required = ($schema->Field_Null($table,$field)) ? '' : '*';
+	    $required = ($replacement_field{$field}) ? '#' :
+		( ($schema->Field_Null($table,$field)) ? '' : '*');
 	    if (defined($multi_lookup_fields{$field})) {
 		($ltable,$lkey,$ldescription) =
 		    split("\t",$lookup_fields{$multi_lookup_fields{$field}});
@@ -409,8 +627,7 @@ EndHTML
 		    get_multi_lookup($X,$cgi_param,$ltable,$lkey,$ldescription);
 		if (defined(%lookup_hash)) {
 		    $multi_field =
-			join('_______________',split(',',$multi_lookup_fields{$field}));
-
+			join('_____',split(',',$multi_lookup_fields{$field}));
 		    map {
 			$done_tuple{$_} = 1;
 		    } split(',',$multi_lookup_fields{$field});
@@ -425,11 +642,12 @@ EndHTML
 	    }
 	    $td_label = TD_Field_Label($field,$required,$rlabel,$helppage);
 	    $lookup_tables{$ltable} = 1;
-	    if (defined(%lookup_hash) && $required eq '') {
+	    if (defined(%lookup_hash) && $required ne '*') {
 		$lookup_hash{''} = '<Select A Value>';
 	    }
 	    $html_page .= Edit_Row($field,$td_label,$values{$field},$table,
-				   $schema,\%lookup_hash,$cgi_param,$ltable);
+				   $schema,\%lookup_hash,$cgi_param,$ltable,
+				   undef,\%readonly_field, \%nondisplay_field);
 	    if (defined(%lookup_hash)) {
 		$selects{$field} = 1;
 	    }
@@ -442,16 +660,23 @@ EndHTML
     $html_page .= '<HR><TABLE BORDER="0" WIDTH="100%" CELLSPACING="0">'."\n";
     $html_page .= <<"EndHTML";
     <tr>
-      <td align="center"><input TYPE="submit" VALUE="Add New (Insert)" NAME="Insert" tabindex="10" style="background-color: gray">
-      <input TYPE="submit" VALUE="Update" NAME="Update" tabindex="11" style="background-color: gray">
-      <input TYPE="submit" VALUE="Delete" NAME="Delete" tabindex="12" style="background-color: gray"></td>
+      <td align="center">
+          <input TYPE="submit" VALUE="Add New (Insert)"$table_onclick
+                 NAME="Insert" tabindex="10" style="background-color: gray">
+          <input TYPE="submit" VALUE="Update"$table_onclick
+                 NAME="Update" tabindex="11" style="background-color: gray">
+          <input TYPE="submit" VALUE="Delete"$table_onclick
+                 NAME="Delete" tabindex="12" style="background-color: gray">
+      </td>
     </tr>
     <tr>
       <td align="center"><p><input TYPE="reset"
       VALUE="Reset Form Values" NAME="Reset Form" tabindex="13" style="background-color: gray">
       </td>
     </tr>
-      <td align="center"><input TYPE="submit" VALUE="Clear Form" NAME="clear" tabindex="14" style="background-color: gray"></p>
+      <td align="center">
+          <input TYPE="submit" VALUE="Clear Form"$table_onclick
+                 NAME="clear" tabindex="14" style="background-color: gray"></p>
       </td>
     </tr>
 EndHTML
@@ -509,6 +734,10 @@ sub execute_changes {
 	!defined($query->param('Delete'))) {
 	return;
     } 
+    if (defined($query->param('Insert')) ||
+	defined($query->param('Update'))) {
+	Replace_Fields($X,$table,$query,$schema);
+    }
     map {
 	if (/pq_/) {
 	    $field = $_;
@@ -593,7 +822,9 @@ sub Next_Where {
     my($qvalue);
     my($percent) = '%';
     my($underscore) = '_';
-    my(@primary_keys) = $schema->Primary_Keys($table);
+    my(@primary_keys) = (($schema->Primary_Keys($table) > 0) ?
+			 $schema->Primary_Keys($table) :
+			 $schema->Table_Fields($table));
     my($last);
     my($rowcount);
 
@@ -628,7 +859,11 @@ sub Next_Where {
 	    undef $where;
 	}
 
-	$command = "select count(*) from $table $where";
+	if ($query->param('server_type') eq 'mSQL') {
+	    $command = "select 1 from $table $where";
+	} else {
+	    $command = "select count(*) from $table $where";
+	}
 
 	$X->Sql($command);
 	@row = $X->NextRow();
@@ -648,7 +883,7 @@ sub get_values {
     my($table) = shift;
     my($qbef) = shift;
     my($query) = shift;
-    my(@field) = $schema->Fields($table);
+    my(@field) = $schema->Table_Fields($table);
     my(@row);
     my($command);
     my($i);
@@ -657,10 +892,16 @@ sub get_values {
     my($value);
     my($qvalue);
     my($rowcount) = 1;
+    my($current_row) = 0;
     my($direction) = ' = ';
     my($col_value);
     my($percent) = '%';
     my($underscore) = '_';
+    my(@primary_keys) = (($schema->Primary_Keys($table) > 0) ?
+			 $schema->Primary_Keys($table) :
+			 $schema->Table_Fields($table));
+    my(@pk_value);
+    my($field);
 
     if (defined($query->param('clear')) ||
 	defined($query->param('Delete')) ) {
@@ -672,7 +913,8 @@ sub get_values {
 	return %value;
     }
     if (!defined($query->param('First')) &&
-	!defined($query->param('Next'))) {
+	!defined($query->param('Next')) &&
+	!defined($query->param('pk_value'))) {
 	$where = 'where ';
 	map {
 	    $value = $query->param("pq_$_");
@@ -683,7 +925,9 @@ sub get_values {
 		$value =~ s/\*/$percent/g;
 		$value =~ s/\?/$underscore/g;
 		$qvalue = $schema->Quote_Field($table,$_,$value);
-		if ($direction eq ' = ' && $qvalue ne $value) {
+		if ($direction eq ' = ' &&
+		    $qvalue ne $value &&
+		    $schema->Field_Type($table,$_) !~ /[Dd]ate/) {
 		    $where .= ' and '.$_. ' LIKE ' .$qvalue;
 		} else {
 		    $where .= ' and '.$_. $direction .$qvalue;
@@ -695,10 +939,25 @@ sub get_values {
 	    undef $where;
 	}
     }
+    if (defined($query->param('pk_value'))) {
+	@pk_value = split("\t",$query->param('pk_value'));
+	$qvalue = $schema->Quote_Field($table,
+				       $primary_keys[0],$pk_value[0]);
+	$where = 'where ' . $primary_keys[0] . ' = ' . $qvalue;
+	for ($i = 1; $i <= $#primary_keys;$i++) {
+	    $qvalue = $schema->Quote_Field($table,
+					   $primary_keys[$i],$pk_value[$i]);
+	    $where .= ' and ' . $primary_keys[$i] . ' = ' . $qvalue;
+	}
+    }
 
     if (defined($query->param('Next'))) {
 	$rowcount = 1;
 	$where = Next_Where($X,$schema,$table,$query);
+    }
+    if (defined($query->param('Overview')) ||
+	defined($query->param('overview'))) {
+	$rowcount = 1000;
     }
 
     if ($query->param('server_type') eq 'oracle') {
@@ -723,26 +982,35 @@ EndQuery
     $X->Sql($command);
     do {
 	while(@row = $X->NextRow()) {
-	    undef %value;
+	    if (++$current_row > $rowcount) {
+		last;
+	    }
 	    if ($X->Regular_Row()) {
 		foreach $col_value (@row) {
 		    $col_value =~ s/\t/ /g;
 		}
-		for ($i = 0; $i < @field; $i++) {
+		for ($i = 0; $i <= $#field;$i++) {
+		    $_ = $field[$i];
 		    $row[$i] =~ s/^\s*//g;
 		    $row[$i] =~ s/\s*$//g;
-		    $value{$field[$i]} = $row[$i];
+		    if ($current_row <= 1) {
+			$value{$_} = $row[$i];
+		    } else {
+			$value{$_} .= "\t".$row[$i];
+		    }
 		}
 	    }
 	}
     } while ($X->More_Results());
     if (defined($query->param('retrieve')) ) {
+	if ($current_row < 1) {
+	    $error_string .= "<B>Search Matched No Entries</B><P>\n";
+	}
 	map {
 	    if (/pq_/) {
 		$query->delete($_);
 	    }
 	} $query->param;
-	return %value;
     }
     return %value;
 }
@@ -762,12 +1030,16 @@ sub Edit_Row {
     my($cgi_param) = shift;
     my($lookup_table) = shift;
     my($search) = shift;
+    my($readonly) = shift;
+    my($nondisplay) = shift;
     my($output);
     my($display_length);
     my(@keys);
     my($lookup_button);
     my($textarea_rows);
     my($search_click);
+    my($display_text);
+    my($break);
 
     if (defined($query->param("pq_$field")) &&
 	!defined($query->param("retrieve"))) {
@@ -782,13 +1054,43 @@ sub Edit_Row {
 					 -value => 'ON',
 					 -label => '');
     }
-    if (defined(%{$lookup_hash})) {
+    if ($nondisplay->{$field}) {
+	# The field shouldn't be processed--
+	# it doesn't matter for an insert, update or delete
+#	$output .= $query->hidden("pq_$field", $default);
+    } elsif ($readonly->{$field}) {
+	$display_length = $schema->Field_Width($table,$field);
+	$output .= "<TR>$td_label";
+	if ($display_length > $cgi_param->{'web_textarea_columns'}) {
+	    $display_text = $default;
+	    $break = $cgi_param->{'web_textarea_columns'};
+	    $display_text =~ s/(.{$break})/$1<BR>/g;
+	    $output .= "<TD>".
+		$search_click .
+		    "<B>$display_text</B>" .
+			$query->hidden("pq_$field", $default) .
+			    "</TD></TR>\n";
+	} else {
+	    $output .= "<TD>".
+		$search_click .
+		    "<B>$default</B>" .
+			$query->hidden("pq_$field", $default) .
+			    "</TD></TR>\n";
+	}
+    } elsif (defined(%{$lookup_hash})) {
 	@keys = (sort (keys %{$lookup_hash}));
 	$output .= "<TR>$td_label";
 	if (defined($lookup_table) && $lookup_table ne '') {
-	    $lookup_button =  "</TD><TD ALIGN=\"RIGHT\">" .
+	    if ($query->param('single_window') eq 'ON') {
+		$lookup_button =  "</TD><TD ALIGN=\"RIGHT\">" .
 		    $query->submit(-name => 'edit_lookup',
 				   -value => "Edit Table: $lookup_table");
+	    } else {
+		$lookup_button =  "</TD><TD ALIGN=\"RIGHT\">" .
+		    $query->submit(-name => 'edit_lookup',
+				   -onClick => "this.form.target='pqedit$lookup_table'",
+				   -value => "Edit Table: $lookup_table");
+	    }
 	}
 	$output .= "<TD>".
 	    $search_click .
@@ -895,11 +1197,11 @@ EndQuery
 	    $label = (defined($rlabel->{$_})) ? $rlabel->{$_} : uc_string($_);
 	    ($depends, $indent) = split("\t",$qbef->{$_});
 	    if ($depends ne ' ') {
-		if (defined($multi_lookup_fields->{$depends})) {
-		    $multi_field = $multi_lookup_fields->{$depends};
-		    $multi_field =~ s/\,/\_______________/g;
-		    $depends = $multi_field;
-		}
+#		if (defined($multi_lookup_fields->{$depends})) {
+#		    $multi_field = $multi_lookup_fields->{$depends};
+#		    $multi_field =~ s/\,/\_____/g;
+#		    $depends = $multi_field;
+#		}
 		$depend_label = (defined($rlabel->{$depends})) ?
 		    $rlabel->{$depends} : uc_string($depends);
 		$check_name = ($selects->{$_}) ?
@@ -908,23 +1210,27 @@ EndQuery
 		$depends_name = ($selects->{$depends}) ?
 		    "formObj.pq_$depends.".'options['."formObj.pq_$depends.selectedIndex".'].value'
 			: "formObj.pq_$depends.value";
-		$javascript .= <<"EndQuery";
-		if ( ($check_name != "" &&
-		      $check_name != "_NULL_" ) &&
-		    ($depends_name == "" ||
-		     $depends_name == "_NULL_" ) ) {
-		    r += "In order to specify $label, a value needs to be selected for $depend_label.  ";
-		}
-EndQuery
-		$check_name = "formObj.pqsearch_$_.checked";
-		$depends_name = "formObj.pqsearch_$depends.checked";
-		$javascript .= <<"EndQuery";
-		if ( $check_name &&
-		    !$depends_name) {
-		    r += "In order to specify $label, a value needs to be selected for $depend_label.  ";
-		}
+		if (!defined($multi_lookup_fields->{$depends})) {
+		    $javascript .= <<"EndQuery";
+		    if ( ($check_name != "" &&
+			  $check_name != "_NULL_" ) &&
+			($depends_name == "" ||
+			 $depends_name == "_NULL_" ) ) {
+			r += "In order to specify $label, a value needs to be selected for $depend_label.  ";
+		    }
 EndQuery
 }
+		if (!defined($multi_lookup_fields->{$depends})) {
+		    $check_name = "formObj.pqsearch_$_.checked";
+		    $depends_name = "formObj.pqsearch_$depends.checked";
+		    $javascript .= <<"EndQuery";
+		    if ( $check_name &&
+			!$depends_name) {
+			r += "In order to specify $label, a value needs to be selected for $depend_label.  ";
+		    }
+EndQuery
+                 }
+	    }
 	} @form_fields;
 	$javascript .= <<"EndQuery";
 	if (r == "") {
@@ -1233,7 +1539,8 @@ sub PQEntry {
 	# Get (open) connection to pqweb database
 	( $PQ = RDBAL::Connect($pq_username, $pq_password,
 			       $pq_server,
-			       $query->param('server_type')) )
+			       $query->param('server_type'),
+			       $query->param('database')) )
 	    or return undef;
 	( $PQ->UseDatabase($pq_database) )
 	    or return undef;
@@ -1257,12 +1564,16 @@ sub get_pq_parameters {
 		     'username',
 		     'password',
 		     'server_type',
+		     'single_window',
 		     'subedit_tables',
 		     'button_subedit',
 		     'begin_html_include',
 		     'middle_html_include',
 		     'end_html_include',
 		     'disable_lookup',
+		     'auto_field',
+		     'replace_field',
+		     'readonly',
 		     'no_schemacache' );
 
     my($helppage) = $query->param('helppage');
@@ -1309,7 +1620,7 @@ sub get_pq_parameters {
 		$row[0] =~ s/^\s*//g;
 		$row[0] =~ s/\s*$//g;
 		if (defined($nondisplay)) {
-		    $nondisplay .= ','.$row[0];
+		    $nondisplay .= ';'.$row[0];
 		} else {
 		    $nondisplay = $row[0];
 		}
@@ -1339,7 +1650,9 @@ sub get_pq_parameters {
 		      'nondisplay' => $nondisplay);
 
     map {
-	$cgi_param{$_} = $query->param($_);
+	if (defined($query->param($_)) && $query->param($_) !~ /^\s*$/) {
+	    $cgi_param{$_} = $query->param($_);
+	}
     } @passthru;
     my($web_property);
     foreach $web_property (keys %web_value) {
@@ -1349,15 +1662,23 @@ sub get_pq_parameters {
 	if (/^web_/) {
 	    $cgi_param{"$_"} = $query->param("$_");
 	}
-	if (/^pq_.*_______________/) {
+	if (/^pq_.*_____/) {
 	    $parameter = $_;
 	    @value = split("\t",$query->param($_));
 	    $parameter =~ s/^pq_//;
-	    @field = split('_______________',$parameter);
+	    @field = split('_____',$parameter);
 	    for ($i = 0; $i <= $#field;$i++) {
 		$query->param("pq_".$field[$i],$value[$i]);
 	    }
 	    $query->delete("pq_$parameter");
+	}
+	if (/^pqsearch_.*_____/) {
+	    $parameter = $_;
+	    $parameter =~ s/^pqsearch_//;
+	    map {
+		$query->param("pqsearch_".$_,1);
+	    } @field = split('_____',$parameter);
+	    $query->delete("pqsearch_$parameter");
 	}
     } $query->param;
     if (!defined($cgi_param{'web_textarea_columns'})) {
@@ -1403,11 +1724,6 @@ EndJavaScript
 	return 1;
     }
     # Output HTML
-#    if ($query->request_method() eq 'GET' || $query->user_agent() !~ /MSIE/ ||
-#	$query->server_software =~ /IIS/) {
-	print $query->header(-type => 'text/html',
-			     -status => '200 OK');
-#    }
     print "\n";
     print $query->start_html(-title => 'PQ Login',
 				 -author => 'brian@ibc.wustl.edu',
@@ -1481,12 +1797,26 @@ EndJavaScript
     print '<TABLE BORDER="0" ALIGN="CENTER" CELLSPACING="0">'."\n\t<TR>\n\t\t<TD>";
     print 
 	$query->submit(-name => 'Login   ',
+		       -onClick => "if (!document.PQLogin.single_window.checked) { this.form.target='pqedit' + document.PQLogin.table.value; }",
 		       -style => 'background-color: gray') .
-    " \n" .
-    $query->reset(-name => 'Reset     ',
-		  -style => 'background-color: gray');
-    print "</TD>\n\t</TR>\n</TABLE>\n";
+			   " \n" .
+		       $query->reset(-name => 'Reset     ',
+		     -style => 'background-color: gray');
+    print "</TD>\n\t</TR>\n\t<TR>\n\t\t<TD>";
+    print $query->checkbox(-name => "single_window",
+			   -value => 'ON',
+			   -label => 'Use a Single Window');
+    print "\t\t</TD>\n\t</TR>\n</TABLE>\n";
     print PQHidden_Parameters($query,$cgi_param);
+    # Pass pq_*, pqsearch_*, pk_value and [Oo]verview through the login screen
+    map {
+	if (/^pq_/ ||
+	    /^[Oo]verview/ ||
+	    /^pk_value/ ||
+	    /^pqsearch_/) {
+	    print $query->hidden($_,$query->param($_)),"\n";
+	}
+    } $query->param;
     print "\n" . $query->end_form;
     print "\n" . $query->end_html;
     return 0;
@@ -1496,11 +1826,6 @@ sub Login_Error {
     my($query) = shift;
     my($cgi_param) = shift;
 
-#    if ($query->request_method() eq 'GET' || $query->user_agent() !~ /MSIE/ ||
-#	$query->server_software =~ /IIS/) {
-	print $query->header(-type => 'text/html',
-			     -status => '200 OK');
-#    }
     print "\n";
     print $query->start_html(-title => "PQ Login",
 			     -author => 'brian@ibc.wustl.edu',
@@ -1532,6 +1857,181 @@ sub PQHidden_Parameters {
     $output_form .= "\n";
     return $output_form;
 }
+
+# pq_field replacements for a table
+#
+# Replacement_Fields($table,$query);
+#
+sub Replacement_Fields {
+    my($table) = shift;
+    my($query) = shift;
+    my($done);
+    my($replace_table, $replace_field, $replace_command);
+    my(%replacement_field);
+ 
+    map {
+	($replace_table, $replace_field, $replace_command) = split(',');
+	$replace_table =~ s/^\s*//g;
+	$replace_table =~ s/\s*$//g;
+	$replace_field =~ s/^\s*//g;
+	$replace_field =~ s/\s*$//g;
+	if ($replace_table eq $table) {
+	    $replacement_field{$replace_field} = 1;
+	}
+    } split(';',$query->param('auto_field'));
+    return %replacement_field;
+}
+
+# pq_field nondisplay for a table
+#
+# Nondisplay_Fields($table,$query,$schema);
+#
+sub Nondisplay_Fields {
+    my($match_table) = shift;
+    my($query) = shift;
+    my($schema) = shift;
+    my($done);
+    my($table, $field);
+    my(%nondisplay_field);
+ 
+    map {
+	($table, $field) = split(',');
+	$table =~ s/^\s*//g;
+	$table =~ s/\s*$//g;
+	$field =~ s/^\s*//g;
+	$field =~ s/\s*$//g;
+	if ($table eq $match_table) {
+	    $nondisplay_field{$field} = 1;
+	}
+    } split(';',$query->param('nondisplay'));
+    # Don't display or process timestamp fields
+    map {
+	if ($schema->Field_Type($match_table,$_) =~ /timestamp/ ||
+	    $schema->Field_Type($match_table,$_) =~ /binary/ ) {
+	    $nondisplay_field{$_} = 1;
+	}
+    } $schema->Table_Fields($match_table);
+    return %nondisplay_field;
+}
+
+# pq_field readonly for a table
+#
+# Readonly_Fields($table,$query);
+#
+sub Readonly_Fields {
+    my($match_table) = shift;
+    my($query) = shift;
+    my($done);
+    my($table, $field);
+    my(%readonly_field);
+ 
+    map {
+	($table, $field) = split(',');
+	$table =~ s/^\s*//g;
+	$table =~ s/\s*$//g;
+	$field =~ s/^\s*//g;
+	$field =~ s/\s*$//g;
+	if ($table eq $match_table) {
+	    $readonly_field{$field} = 1;
+	}
+    } split(';',$query->param('replace_field')),
+    split(';',$query->param('readonly'));
+    return %readonly_field;
+}
+
+#
+# pq_field replacement (auto assignment)
+#
+# Replace_Fields($X,$table,$query,$schema);
+#
+sub Replace_Fields {
+    my($X) = shift;
+    my($table) = shift;
+    my($query) = shift;
+    my($schema) = shift;
+    my($replace_table, $replace_field, $replace_command);
+    my(@replace_field);
+    my(@replace_command);
+    my($command);
+    my($sql_command);
+    my($field);
+    my($value);
+    my($i);
+    my(%force_field);
+    # Get env values as $replace{'$env'} = $value;
+    my(%replace) = (
+		    '\$referer' => $query->referer(),
+		    '\$remote_address' => $query->remote_addr(),
+		    '\$remote_ident' => $query->remote_ident(),
+		    '\$remote_host' => $query->remote_host(),
+		    '\$remote_user' => $query->remote_user(),
+		    '\$script_name' => $query->script_name(),
+		    '\$server_admin' => $ENV{'SERVER_ADMIN'},
+		    '\$server_name' => $query->server_name(),
+		    '\$server_software' => $query->server_software(),
+		    '\$virtual_host' => $query->virtual_host(),
+		    '\$server_port' => $query->server_port(),
+		    '\$user_agent' => $query->user_agent(),
+		    '\$user_name' => $query->user_name(),
+		    '\$unique_id' => $ENV{'UNIQUE_ID'}
+		);
+
+    # Get pq_field as $replace{'$pq_field'} = $value;
+    map {
+	$replace{'\$pq_'.$_} = $query->param('pq_'.$_);
+    } $schema->Table_Fields($table);
+    map {
+	($replace_table, $replace_field, $replace_command) = split(',');
+	$replace_table =~ s/^\s*//g;
+	$replace_table =~ s/\s*$//g;
+	$replace_field =~ s/^\s*//g;
+	$replace_field =~ s/\s*$//g;
+	if ($replace_table eq $table) {
+	    push @replace_field, ($replace_field);
+	    push @replace_command, ($replace_command);
+	}
+    } split(';',$query->param('auto_field'));
+    map {
+	($replace_table, $replace_field, $replace_command) = split(',');
+	$replace_table =~ s/^\s*//g;
+	$replace_table =~ s/\s*$//g;
+	$replace_field =~ s/^\s*//g;
+	$replace_field =~ s/\s*$//g;
+	$force_field{$replace_field} = 1;
+	if ($replace_table eq $table) {
+	    push @replace_field, ($replace_field);
+	    push @replace_command, ($replace_command);
+	}
+    } split(';',$query->param('replace_field'));
+    for ($i = 0;$i <= $#replace_field;$i++) {
+	if (!defined($query->param('pq_'.$replace_field)) ||
+	    $query->param('pq_'.$replace_field) eq '' ||
+	    $query->param('pq_'.$replace_field) eq '_NULL_' ||
+	    $force_field{$replace_field}) {
+	    $command = $replace_command[$i];
+	    if ($command =~ /^[Ss][Qq][Ll]\:/) {
+		$sql_command = 1;
+		$command =~ s/^[Ss][Qq][Ll]\://;
+	    } else {
+		$sql_command = 0;
+		$command =~ s/^[Vv][Aa][Ll][Uu][Ee]\://;
+	    }
+	    foreach $field (sort (keys %replace)) {
+		$value = $replace{$field};
+		$command =~ s/$field/$value/g;
+	    }
+	    if ($sql_command) {
+		$X->Sql($command);
+		($value) = $X->NextRow();
+		while ($X->More_Results()) {}
+	    } else {
+		$value = $command;
+	    }
+	    $query->param('pq_'.$replace_field,$value);
+	}
+    }
+}
+
 
 1;
 !NO!SUBS!

@@ -77,7 +77,7 @@ EOT
 print "Checking for RDBAL::Schema..";
 eval {
     require RDBAL::Schema;
-    #RDBAL::Schema->require_version('1.00');
+    RDBAL::Schema::Version() >= '1.10';
 };
 if ($@) {
     print " failed\n";

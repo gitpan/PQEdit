@@ -4,6 +4,7 @@ These are features that would be nice to have and might even happen someday.
 The order of items does not reflect priority.
 
   o  More control of the 'Look and Feel' of the HTML page (colors, fonts, etc.).
+  o  Implement nondisplay parameter.
 
   o  Other types of database servers (PostgreSQL, mSQL, mySQL, etc.).
      (Note: this depends on there being a version of RDBAL and RDBAL::Schema

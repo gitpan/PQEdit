@@ -4,4 +4,24 @@ Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
  o  Release 1.10  Fixed more support for views
 	          (Code changes are thanks to Fyodor Krasnov, Zenon N.S.P.).
                   Fixed 'Next Entry' bug.
-
+ o  Release 1.50  Fixed datetime field search functionality.
+                  Fixed logon failure screen.
+                  Fixed multiple field parameter handling.
+                  Added frame (windows) per PQ Edit of a table.
+                  Added a 'View Search Set' for an overview window.
+                  Added pk_value for passing a tab delimited tuple for
+                       specifying the record to edit.  Must have a value for
+                       each of the primary key fields (or all fields if there
+                       is no primary key).
+                  Added passing pq_* and pqsearch_* through the login screen
+                       (so that PQ Edit can be called from other pages to edit
+                       a particular record but still have logon validation).
+                  Added alpha level support for mSQL using DBI.
+                  Added dumping out parameters if pqdebug=1.
+                  Added javascript Help on Search button for help window.
+                  Added auto_field blank field replacement mechanisms
+                       for inserts and updates.
+                  Added replace_field field replacement mechanisms
+                       for inserts and updates.
+                  Added readonly fields.
+                  Implemented nondisplay fields.

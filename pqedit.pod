@@ -18,7 +18,15 @@ pqedit.cgi - Web-based database table editor.
 &B<middle_html_include>=/subweb_directory/html_to_include.html
 &B<end_html_include>=/subweb_directory/html_to_include.html
 &B<disable_lookup>=nonlookup_table&B<no_schemacache>=1
-&B<pq_B<filename>>=field_value&B<pqdebug>=1'
+&B<auto_field>=table,field,replacement;...
+&B<replace_field>=table,field,replacement;...
+&B<pq_B<fieldname>>=field_value&B<pqsearch_B<fieldname>>=1
+&B<pk_value>=tab_delimited_list_of_primary_key_values
+&B<Overview>=1
+&B<single_window>=ON
+&B<nondisplay>=table,field;...
+&B<readonly>=table,field;...
+&B<pqdebug>=1'
 
 
   or
@@ -41,8 +49,15 @@ pqedit.cgi - Web-based database table editor.
     <INPUT TYPE="hidden" NAME="B<middle_html_include>" VALUE="/subweb_directory/html_to_include.html">
     <INPUT TYPE="hidden" NAME="B<end_html_include>" VALUE="/subweb_directory/html_to_include.html">
     <INPUT TYPE="hidden" NAME="B<disable_lookup>" VALUE="nonlookup_table">
+    <INPUT TYPE="hidden" NAME="B<replace_field>" VALUE="table,field,replacement;...">
     <INPUT TYPE="hidden" NAME="B<no_schemacache>" VALUE="1">
     <INPUT TYPE="hidden" NAME="B<pq_I<fieldname>>" VALUE="field value">
+    <INPUT TYPE="hidden" NAME="B<pqsearch_I<fieldname>>" VALUE="1">
+    <INPUT TYPE="hidden" NAME="B<pk_value>" VALUE="tab_delimited_list_of_primary_key_values">
+    <INPUT TYPE="hidden" NAME="B<Overview>" VALUE="1">
+    <INPUT TYPE="hidden" NAME="B<single_window>" VALUE="ON">
+    <INPUT TYPE="hidden" NAME="B<nondisplay>" VALUE="table,field;...">
+    <INPUT TYPE="hidden" NAME="B<readonly>" VALUE="table,field;...">
     <INPUT TYPE="hidden" NAME="B<pqdebug>" VALUE="1">
 </FORM>
 
@@ -184,13 +199,116 @@ A file which contains HTML to include near the end of the PQ Edit form.  The spe
 
 A comma seperated list of tables that should B<NOT> used as Lookup Tables or to provide the values and labels for Pull Down Menus.  (NOTE: the HTML escaped form for comma is B<%2C>. ) 
 
+=head2 B<replace_field> B<auto_field>
+
+A semicolan seperated list of I<table>,I<field>,SQL:I<replacement> or
+I<table>,I<field>,VALUE:I<replacement> or I<table>,I<field>,I<replacement>.
+
+B<replace_field> always replaces a fields values whereas B<auto_field> only replaces values of fields which are left blank (NULL).  B<replace_field> fields are shown as read-only fields on the PQ Edit form.
+
+Specifies values for fields for B<insert>s or B<update>s.  The replacement portion is processed to replace variables in the list specified below as well as all variables of type $pq_I<field>.  If SQL: is specified, then the replacement is used as a valid command to be executed on the database server, with the resulting single value replacing that field's value for the B<insert> or B<update> operation.  If SQL: not is specified, then the replacement replaces that field's value for the B<insert> or B<update> operation.
+
+For example:
+
+pqedit.cgi?replace_field=I<main_table>,I<first_field>,SQL:I<select '$remote_address'>
+
+would execute: "select 'I<ip_address>'" on the database server and put the first value returned into the I<first_field> value for the insert or update statement of table I<main_table>.
+
+or
+
+pqedit.cgi?replace_field=main_table,first_field,VALUE:$remote_address $remote_user $pq_another_field
+
+would put 'I<ip_address> I<username> I<another_field>' into the I<first_field> value for the insert or update statement of table I<main_table>.
+
+Replacement variables:
+
+=over 4
+
+=item $pq_I<field>
+
+$pq_I<field> gives the current value (from the PQ Edit form) of some other table field from the same record.
+
+=item $referer
+
+The URL of the page the browser was viewing prior to fetching your script. Not available for all browsers. 
+
+=item $remote_address
+
+The dotted IP address of the remote host. 
+
+=item $remote_ident
+
+The identity-checking information from the remote host. Only available if the remote host has the identd daemon turned on. 
+
+=item $remote_host
+
+Either the remote host name or IP address. if the former is unavailable. 
+
+=item $remote_user
+
+The name given by the remote user during password authorization. 
+
+=item $script_name
+
+The script name as a partial URL, for self-refering scripts. 
+
+=item $server_name
+
+The name of the WWW server the script is running under. 
+
+=item $server_admin
+
+The name of the administrator of the WWW server the script is running under. 
+
+=item $server_software
+
+The name and version of the server software. 
+
+=item $virtual_host
+
+When using the virtual host feature of some servers, the name of the virtual host the browser is accessing. 
+
+=item $server_port
+
+The communications port the server is using. 
+
+=item $user_agent
+
+The identity of the remote user's browser software, e.g. "Mozilla/1.1N (Macintosh; I; 68K)" 
+
+=item $user_name
+
+Attempts to obtain the remote user's name, using a variety of environment variables. This only works with older browsers such as Mosaic. Netscape does not reliably report the user name! 
+
+=item $unique_id
+
+The Apache web server generated unique ID.
+
+=back
+
 =head2 B<pq_I<fieldname>>
 
 Values for the fields are passed to PQ Edit in this format to provide default values for the form's fields.  Example, assuming database field: telephone_number is: pq_telephone_number='(314) 555-1111'.
 
+=head2 B<pqsearch_I<fieldname>>
+
+Setting this to one as well as setting the corresponding pq_I<fieldname>, will allow setting the search criteria for the record(s) to be displayed.  The 'Overview' option may be used with the pq_I<fieldname> and pqsearch_I<fieldname> options.
+
+=head2 B<Overview>
+
+Setting this to one (1) will display an Overview ('View Search Set') window with the search parameters set by the pq_I<fieldname> and pqsearch_I<fieldname> parameters.
+
+=head2 B<single_window>
+
+Value none or 'ON'.  Used to force disabling of multiple window frames.
+
+=head2 B<readonly>
+
+A list of fields to display but not allow to be edited.
+
 =head2 B<nondisplay>
 
-Not implemented.  A list of fields to not display.
+A list of fields to not display.
 
 =head2 B<no_schemacache>
 
@@ -242,6 +360,20 @@ The password to use when connecting to the pqweb database.
 =head2 pqweb_entry
 
 Which pqweb entry to use (the pqweb..pqweb.pq value).
+
+=head1 PQ Edit Frames
+
+When PQ Edit is in multiple window frame mode (single_window != 'ON'), the names of the frames which it uses are in the form:
+
+=over 4
+
+=item pqeditI<table> for Editing windows
+
+=item overviewI<table> for Overview windows
+
+=back
+
+If it is desired, a Frameset HTML window could be constructed prior to invoking PQ Edit which would contain the PQ Edit frames as subframes.
 
 =head1 AUTHOR INFORMATION
 
