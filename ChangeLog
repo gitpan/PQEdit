@@ -25,3 +25,8 @@ Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
                        for inserts and updates.
                   Added readonly fields.
                   Implemented nondisplay fields.
+ o  Release 1.60  Added 'login' parameter for user-less/password-less login.
+                  Added 'label_match' parameter to allow specifying matches
+                  for picking database field to use as pulldown list labels
+                  and added to possibilities for matching.
+	

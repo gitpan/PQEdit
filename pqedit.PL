@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.50";
+$VERSION = "1.60";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -63,6 +63,15 @@ Change_Edit_Table($query);
 #
 my($cgi_param) = PQEntry($query);
 
+# Do password-less login
+if (defined($query->param('login'))) {
+    my($server) = $cgi_param->{'server'};
+    my($database) = $cgi_param->{'database'};
+    my($login) = $query->param('login');
+    ($cgi_param->{'username'}, $cgi_param->{'password'}) =
+	eval "use lib '.'; use PQLOGIN; PQLOGIN\:\:Fetch(\$server,\$database,\$login);";
+}
+
 #
 # Display Login screen, if necessary
 #
@@ -76,6 +85,7 @@ if (!PQLogin($query,$cgi_param)) {
 #
 
 my($error_string);
+$error_string = '';		# clear it for global use
 undef $error_string;		# clear it for global use
 # different handler to check callbacks
 if ($RDBAL::Layer{'SybaseDBlib'} || $RDBAL::Layer{'ApacheSybaseDBlib'}) {
@@ -98,6 +108,10 @@ if ( $X = RDBAL::Connect($cgi_param->{'username'},
 	    $logged_in = 1;
 	}
     }
+}
+if (defined($query->param('login'))) {
+    delete $cgi_param->{'username'};
+    delete $cgi_param->{'password'};
 }
 if (!$logged_in) {
     Login_Error($query,$cgi_param);
@@ -447,7 +461,7 @@ sub Edit {
     # Output HTML
     $html_page .= "\n";
 #    $html_page .= '<H1 ALIGN="CENTER">Editing: ' . $fullname . "</H1>\n";
-    %lookup_fields = find_lookups($schema,$table);
+    %lookup_fields = find_lookups($schema,$table,$cgi_param);
     map {
 	if (/\,/) {
 	    $multi_field = $_;
@@ -1263,6 +1277,7 @@ sub uc_string {
 sub find_lookups {
     my($schema) = shift;
     my($table) = shift;
+    my($cgi_param) = shift;
     my($parent);
     my(@relation);
     my(%lookups);
@@ -1270,6 +1285,10 @@ sub find_lookups {
     my($pfield);
     my($first_pfield);
     my($description);
+    my(@description_match) = split(',',$cgi_param->{'label_match'});
+    my($description_match) = (defined($cgi_param->{'label_match'})) ?
+	\@description_match :
+	[ 'description', 'comment', '_name', 'label', 'desc' ];
     my(@fields);
     my(@pfields);
     my($single_key) = 1;
@@ -1296,12 +1315,9 @@ sub find_lookups {
 	} @relation;
 	if (@relation <= 1) {
 	    ($pfield, $field) = split("=",$relation[0]);
-	    $description = '';
-	    map {
-		if (/description/) {
-		    $description = $_;
-		}
-	    } $schema->Table_Fields($parent);
+	    $description = Find_Description_Field( [ 'description',
+						    '_name', 'label', 'desc' ],
+						  $schema->Table_Fields($parent));
 	    if ($description eq '') {
 		$description = $pfield;
 	    }
@@ -1309,24 +1325,16 @@ sub find_lookups {
 	} elsif ($single_key) {
 	    map {
 		($pfield, $field) = split("=");
-		$description = '';
-		map {
-		    if (/description/) {
-			$description = $_;
-		    }
-		} $schema->Table_Fields($parent);
+		$description = Find_Description_Field( $description_match,
+						      $schema->Table_Fields($parent));
 		if ($description eq '') {
 		    $description = $pfield;
 		}
 		$lookups{$field} = "$parent\t$pfield\t$description";
 	    } @relation;
 	} else {
-	    $description = '';
-	    map {
-		if (/description/) {
-		    $description = $_;
-		}
-	    } $schema->Table_Fields($parent);
+	    $description = Find_Description_Field( $description_match,
+						  $schema->Table_Fields($parent));
 	    if ($description eq '') {
 		$description = join(',',@pfields);
 	    }
@@ -1348,6 +1356,24 @@ sub find_lookups {
 	}
     } $schema->Parents($table);
     return %lookups;
+}
+
+sub Find_Description_Field {
+    my($match_ref) = shift;
+    my(@fields) = @_;
+    my($match);
+    my($description);
+
+    foreach $match (@$match_ref) {
+	if (!defined($description)) {
+	    map {
+		if (/$match/ && !defined($description)) {
+		    $description = $_;
+		}
+	    } @fields;
+	}
+    }
+    return (defined($description) ? $description : '');
 }
 
 #
@@ -1563,6 +1589,7 @@ sub get_pq_parameters {
 		     'table',
 		     'username',
 		     'password',
+		     'login',
 		     'server_type',
 		     'single_window',
 		     'subedit_tables',
@@ -1571,6 +1598,7 @@ sub get_pq_parameters {
 		     'middle_html_include',
 		     'end_html_include',
 		     'disable_lookup',
+		     'label_match',
 		     'auto_field',
 		     'replace_field',
 		     'readonly',
@@ -1959,6 +1987,9 @@ sub Replace_Fields {
     my($i);
     my(%force_field);
     # Get env values as $replace{'$env'} = $value;
+    my($localtime);
+    $localtime = localtime(time());
+    $localtime =~ s/^\S+\s*//;
     my(%replace) = (
 		    '\$referer' => $query->referer(),
 		    '\$remote_address' => $query->remote_addr(),
@@ -1973,6 +2004,7 @@ sub Replace_Fields {
 		    '\$server_port' => $query->server_port(),
 		    '\$user_agent' => $query->user_agent(),
 		    '\$user_name' => $query->user_name(),
+		    '\$datetime' => $localtime,
 		    '\$unique_id' => $ENV{'UNIQUE_ID'}
 		);
 
@@ -2019,8 +2051,11 @@ sub Replace_Fields {
 	    foreach $field (sort (keys %replace)) {
 		$value = $replace{$field};
 		$command =~ s/$field/$value/g;
+		$error_string .= "DEBUG REPLACE> $command = $field / $value<P>\n";
 	    }
-	    if ($sql_command) {
+	    if (defined($query->param('login'))) {
+		$value = $command;
+	    } elsif ($sql_command) {
 		$X->Sql($command);
 		($value) = $X->NextRow();
 		while ($X->More_Results()) {}

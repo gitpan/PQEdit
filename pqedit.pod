@@ -18,6 +18,7 @@ pqedit.cgi - Web-based database table editor.
 &B<middle_html_include>=/subweb_directory/html_to_include.html
 &B<end_html_include>=/subweb_directory/html_to_include.html
 &B<disable_lookup>=nonlookup_table&B<no_schemacache>=1
+&B<label_match>=label_match_string,label_match_string2,...
 &B<auto_field>=table,field,replacement;...
 &B<replace_field>=table,field,replacement;...
 &B<pq_B<fieldname>>=field_value&B<pqsearch_B<fieldname>>=1
@@ -49,6 +50,7 @@ pqedit.cgi - Web-based database table editor.
     <INPUT TYPE="hidden" NAME="B<middle_html_include>" VALUE="/subweb_directory/html_to_include.html">
     <INPUT TYPE="hidden" NAME="B<end_html_include>" VALUE="/subweb_directory/html_to_include.html">
     <INPUT TYPE="hidden" NAME="B<disable_lookup>" VALUE="nonlookup_table">
+    <INPUT TYPE="hidden" NAME="B<label_match>" VALUE="label_match_string,label_match_string2,...">
     <INPUT TYPE="hidden" NAME="B<replace_field>" VALUE="table,field,replacement;...">
     <INPUT TYPE="hidden" NAME="B<no_schemacache>" VALUE="1">
     <INPUT TYPE="hidden" NAME="B<pq_I<fieldname>>" VALUE="field value">
@@ -124,82 +126,88 @@ or some or all of these may be passed as CGI GET or POST parameters.
 
 =head1 PQEdit parameters
 
-=head2 B<server>
+=head2 server
 
 The name of the Transact-SQL database server (Sybase or MS SQL) to connect to.
 
-=head2 B<server_type>=I<oracle>
+=head2 server_type=oracle
 
 This tells PQ Edit that it is an Oracle database which it is talking to.
 This parameter is mandatory for the correct working of PQ Edit with an Oracle
 database but should not be used for all Transact-SQL databases.
 
-=head2 B<database>
+=head2 database
 
 The name of the database on the database server that contains the table(s) to edit.
 
-=head2 B<table>
+=head2 table
 
 The name of the database table to start editing.
 
-=head2 B<username>
+=head2 username
 
 The username to use to login to the database server.
 
-=head2 B<password>
+=head2 password
 
 The password to use to login to the database server.
 
-=head2 B<helppage>
+=head2 helppage
 
 The URL of an HTML page which contain bookmarks which correspond to the names of the fields in the database.  If this parameter is given, then PQ Edit will make the labels of the form's fields into clickable links pointing to I<htmlpage>#I<fieldname>.  If a fieldname is part of a foreign key tuple, then the bookmark which will be used will consist of the field names seperated by ' and ' (Example: 'field1 and field2').
 
 The helppage value may also be retrieved from the optional pqweb database.
 
-=head2 B<labels>
+=head2 labels
 
 This parameter may contain a list of comma seperated pairs of fields and their
 overridden labels.  The field;label pair is seperated by a semicolon.
 
 Example: labels=field1name;Field 1 Label,field2name;Field 2 Label
 
-=head2 B<subedit_tables>
+=head2 subedit_tables
 
 A comma seperated list of tables that should be also made available for editing.  (NOTE: the HTML escaped form for comma is B<%2C>. )
 
-=head2 B<button_subedit>
+=head2 button_subedit
 
 When given a true value, B<1>, uses push buttons instead of radio buttons for selecting (and switching to) another table for editing.
 
-=head2 B<web_body_bgcolor>
+=head2 web_body_bgcolor
 
 An HTML background color, BGCOLOR, value for the displayed pages.
 
-=head2 B<web_textarea_columns>
+=head2 web_textarea_columns
 
 The number of text columns to use for larger character fields.  Any character field larger than this value uses a text area CGI field instead of a text CGI field for editing.  The default is 61.
 
-=head2 B<web_textarea_rows>
+=head2 web_textarea_rows
 
 The number of text rows to use for larger character fields.  The text area field will only be as large as is necessary based on the size of the character field--this value limits the maximum number of rows used.  The default is 2.
 
-=head2 B<begin_html_include>
+=head2 begin_html_include
 
 A file which contains HTML to include near the beginning of the PQ Edit form.  The specification of this file should be the absolute path relative to the root of the web hierarchy.  Example: '/mydir/helpfile.html'.  This file should not contain the <HTML>, <BODY>, </BODY>, or </HTML> tags.
 
-=head2 B<middle_html_include>
+=head2 middle_html_include
 
 A file which contains HTML to include near the middle of the PQ Edit form.  The specification of this file should be the absolute path relative to the root of the web hierarchy.  Example: '/mydir/helpfile.html'.  This file should not contain the <HTML>, <BODY>, </BODY>, or </HTML> tags.
 
-=head2 B<end_html_include>
+=head2 end_html_include
 
 A file which contains HTML to include near the end of the PQ Edit form.  The specification of this file should be the absolute path relative to the root of the web hierarchy.  Example: '/mydir/helpfile.html'.  This file should not contain the <HTML>, <BODY>, </BODY>, or </HTML> tags.
 
-=head2 B<disable_lookup>
+=head2 disable_lookup
 
 A comma seperated list of tables that should B<NOT> used as Lookup Tables or to provide the values and labels for Pull Down Menus.  (NOTE: the HTML escaped form for comma is B<%2C>. ) 
 
-=head2 B<replace_field> B<auto_field>
+=head2 label_match
+
+A comma seperated list of strings to use to match field names against when lookup for the field to use as a label for lookup fields.  The default strings (in the order used for matching is: 'description', 'comment', '_name', 'label', 'desc' (feedback welcomed on this default list).
+
+So if the parent table used to create a lookup pulldown list has a field such as 'mydescription' or 'foo_comment' PQ Edit will use the field 'mydescription'.
+
+=head2 replace_field auto_field
 
 A semicolan seperated list of I<table>,I<field>,SQL:I<replacement> or
 I<table>,I<field>,VALUE:I<replacement> or I<table>,I<field>,I<replacement>.
@@ -280,45 +288,49 @@ The identity of the remote user's browser software, e.g. "Mozilla/1.1N (Macintos
 
 Attempts to obtain the remote user's name, using a variety of environment variables. This only works with older browsers such as Mosaic. Netscape does not reliably report the user name! 
 
+=item $datetime
+
+The current date and time as a standard string.
+
 =item $unique_id
 
 The Apache web server generated unique ID.
 
 =back
 
-=head2 B<pq_I<fieldname>>
+=head2 pq_fieldname
 
 Values for the fields are passed to PQ Edit in this format to provide default values for the form's fields.  Example, assuming database field: telephone_number is: pq_telephone_number='(314) 555-1111'.
 
-=head2 B<pqsearch_I<fieldname>>
+=head2 pqsearch_fieldname
 
 Setting this to one as well as setting the corresponding pq_I<fieldname>, will allow setting the search criteria for the record(s) to be displayed.  The 'Overview' option may be used with the pq_I<fieldname> and pqsearch_I<fieldname> options.
 
-=head2 B<Overview>
+=head2 Overview
 
 Setting this to one (1) will display an Overview ('View Search Set') window with the search parameters set by the pq_I<fieldname> and pqsearch_I<fieldname> parameters.
 
-=head2 B<single_window>
+=head2 single_window
 
 Value none or 'ON'.  Used to force disabling of multiple window frames.
 
-=head2 B<readonly>
+=head2 readonly
 
 A list of fields to display but not allow to be edited.
 
-=head2 B<nondisplay>
+=head2 nondisplay
 
 A list of fields to not display.
 
-=head2 B<no_schemacache>
+=head2 no_schemacache
 
 When given a true value, B<1>, causes PQ Edit to not use the cached copy of the schema and to write out a new schema cache.  Note that this applies for the whole PQ Edit session.
 
-=head2 B<pqdebug>
+=head2 pqdebug
 
 When given a true value, B<1>, causes PQ Edit to run in a debugging mode.
 
-=head1 B<PQ Web Database Parameters>
+=head1 PQ Web Database Parameters
 
 An optional database may be used to store certain parameters used by PQEdit.
 
@@ -393,6 +405,10 @@ www@ibc.wustl.edu
 Thanks very much to:
 
 B<David J. States> (states@ibc.wustl.edu)
+
+and
+
+B<Fyodor Krasnov> (fyodor@bws.aha.ru)
 
      for suggestions and bug fixes.
 
