@@ -25,12 +25,12 @@ print "Extracting $file.cgi\n";
 # In this section, perl variables will be expanded during extraction.
 # You can use $Config{...} to use Configure variables.
 
+print OUT "#!$^X\n";
 print OUT <<'!NO!SUBS!';
-#!/usr/local/bin/perl
 # a perl CGI database table editor
 #
 
-$VERSION = "1.62";
+$VERSION = "1.63";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
