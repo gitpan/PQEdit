@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.00";
+$VERSION = "1.10";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -387,7 +387,7 @@ EndHTML
 	    }
 	    undef %lookup_hash;
 	}
-    } $schema->Table_Fields($table);
+    } $schema->Table_Fields($table), $schema->View_Fields($table);
 
     $html_page .= '<TR><TD COLSPAN="3"><HR></TD></TR>'."\n";
     $html_page .= <<"EndHTML";
@@ -435,7 +435,7 @@ EndHTML
 	    }
 	    undef %lookup_hash;
 	}
-    } $schema->Table_Fields($table);
+    } $schema->Table_Fields($table), $schema->View_Fields($table);
 
     $html_page .= "</TABLE>\n";
 
@@ -574,6 +574,70 @@ sub execute_changes {
     return $html_page;
 }
 
+
+#
+#    $where = Next_Where($connection,$schema,$table,$cgi_query);
+#
+
+sub Next_Where {
+    my($X) = shift;
+    my($schema) = shift;
+    my($table) = shift;
+    my($query) = shift;
+    my(@row);
+    my($command);
+    my($i);
+    my(%value);
+    my($where);
+    my($value);
+    my($qvalue);
+    my($percent) = '%';
+    my($underscore) = '_';
+    my(@primary_keys) = $schema->Primary_Keys($table);
+    my($last);
+    my($rowcount);
+
+    map {
+	$value = $query->param("pq_$_");
+	if (defined($value) &&
+	    $value !~ /^\s*$/ &&
+	    $value ne '_NULL_') {
+	    $value =~ s/\*/$percent/g;
+	    $value =~ s/\?/$underscore/g;
+	    $qvalue = $schema->Quote_Field($table,$_,$value);
+	    $value{$_} = $qvalue;
+	}
+    } @primary_keys;
+    $last = $#primary_keys;
+
+    do {
+	$where = 'where ';
+	for ($i = 0; $i <= $last;$i++) {
+	    $_ = $primary_keys[$i];
+	    if (defined($value{$_})) {
+		if ($i == $last) {
+		    $where .= ' and '.$_. ' > ' .$value{$_};
+		} else {
+		    $where .= ' and '.$_. ' = ' .$value{$_};
+		}
+	    }
+	}
+	$last--;
+	$where =~ s/^where\s+and\s+/where /;
+	if ($where =~ /^\s*where\s*$/ ) {
+	    undef $where;
+	}
+
+	$command = "select count(*) from $table $where";
+
+	$X->Sql($command);
+	@row = $X->NextRow();
+	while ($X->More_Results()) {}
+    } while(!defined($row[0]) || $row[0] == 0);
+    return $where;
+}
+
+
 #
 #    %values = get_values($connection,$schema,$table,$cgi_query);
 #
@@ -607,11 +671,8 @@ sub get_values {
 	} $query->param;
 	return %value;
     }
-    if (!defined($query->param('First'))) {
-	if (defined($query->param('Next'))) {
-	    $direction = ' >= ';
-	    $rowcount = 2;
-	}
+    if (!defined($query->param('First')) &&
+	!defined($query->param('Next'))) {
 	$where = 'where ';
 	map {
 	    $value = $query->param("pq_$_");
@@ -633,6 +694,11 @@ sub get_values {
 	if ($where =~ /^\s*where\s*$/ ) {
 	    undef $where;
 	}
+    }
+
+    if (defined($query->param('Next'))) {
+	$rowcount = 1;
+	$where = Next_Where($X,$schema,$table,$query);
     }
 
     if ($query->param('server_type') eq 'oracle') {
@@ -824,7 +890,7 @@ EndQuery
 		!defined($multi_lookup_fields->{$_})) {
 		push @form_fields, ($_);
 	    }
-	} $schema->Table_Fields($table);
+	} $schema->Table_Fields($table), $schema->View_Fields($table);
 	map {
 	    $label = (defined($rlabel->{$_})) ? $rlabel->{$_} : uc_string($_);
 	    ($depends, $indent) = split("\t",$qbef->{$_});

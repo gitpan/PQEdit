@@ -1,4 +1,7 @@
 Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
 
- o  Release 1.00
+ o  Release 1.00  Initial Release
+ o  Release 1.10  Fixed more support for views
+	          (Code changes are thanks to Fyodor Krasnov, Zenon N.S.P.).
+                  Fixed 'Next Entry' bug.
 
