@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.60";
+$VERSION = "1.62";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -53,7 +53,8 @@ Change_Edit_Table($query);
 #    if ($query->request_method() eq 'GET' || $query->user_agent() !~ /MSIE/ ||
 #	$query->server_software =~ /IIS/) {
 	print $query->header(-type => 'text/html',
-			     -status => '200 OK');
+			     -status => '200 OK',
+			     -expires => 'now');
 #}
 #    }
 

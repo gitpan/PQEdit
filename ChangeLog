@@ -29,4 +29,6 @@ Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
                   Added 'label_match' parameter to allow specifying matches
                   for picking database field to use as pulldown list labels
                   and added to possibilities for matching.
-	
+ o  Release 1.61  Added expires now to content header to disable browser
+                  caching.
+ o  Release 1.62  Fixed Makefile.PL to not check for Sybase related modules.

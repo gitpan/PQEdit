@@ -38,41 +38,41 @@ EOT
     print " ok\n";
 }
 
-print "Checking for Sybase::DBlib..";
-eval {
-    require Sybase::DBlib;
-    #Sybase::DBlib->require_version('2.00');
-};
-if ($@) {
-    print " failed\n";
-    $missing_modules++;
-    print <<EOT;
-$@
-The Sybase::DBlib is currently the only supported database driver interface.
-
-EOT
-    sleep(2);  # Don't hurry too much
-} else {
-    print " ok\n";
-}
-
-print "Checking for Apache::Sybase::DBlib..";
-eval {
-    require Apache::Sybase::DBlib;
-    #Apache::Sybase::DBlib->require_version('2.00');
-};
-if ($@) {
-    print " failed\n";
-    $missing_modules++;
-    print <<EOT;
-$@
-The Apache::Sybase::DBlib is needed for proper web server interaction.
-
-EOT
-    sleep(2);  # Don't hurry too much
-} else {
-    print " ok\n";
-}
+#print "Checking for Sybase::DBlib..";
+#eval {
+#    require Sybase::DBlib;
+#    #Sybase::DBlib->require_version('2.00');
+#};
+#if ($@) {
+#    print " failed\n";
+#    $missing_modules++;
+#    print <<EOT;
+#$@
+#The Sybase::DBlib is currently the only supported database driver interface.
+#
+#EOT
+#    sleep(2);  # Don't hurry too much
+#} else {
+#    print " ok\n";
+#}
+#
+#print "Checking for Apache::Sybase::DBlib..";
+#eval {
+#    require Apache::Sybase::DBlib;
+#    #Apache::Sybase::DBlib->require_version('2.00');
+#};
+#if ($@) {
+#    print " failed\n";
+#    $missing_modules++;
+#    print <<EOT;
+#$@
+#The Apache::Sybase::DBlib is needed for proper web server interaction.
+#
+#EOT
+#    sleep(2);  # Don't hurry too much
+#} else {
+#    print " ok\n";
+#}
 
 print "Checking for RDBAL::Schema..";
 eval {
