@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.64";
+$VERSION = "1.7";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -985,6 +985,10 @@ sub get_values {
 	}
 	$command = <<"EndQuery";
 	    select * from $table $where
+EndQuery
+    } elsif ($query->param('server_type') eq 'Pg') {
+	$command = <<"EndQuery";
+	SELECT * FROM $table $where LIMIT $rowcount
 EndQuery
     } else {
 	$command = <<"EndQuery";

@@ -1,4 +1,4 @@
-Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
+Thr Aug 17 1999   Brian Dunford-Shore <brian@ibc.wustl.edu>
 
  o  Release 1.00  Initial Release
  o  Release 1.10  Fixed more support for views
@@ -34,3 +34,4 @@ Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
  o  Release 1.62  Fixed Makefile.PL to not check for Sybase related modules.
  o  Release 1.63  Install fix.
  o  Release 1.64  Added forcing a browser window to focus when it is the target.
+ o  Release 1.7   Added support for PostgreSQL (Pg) database server.
