@@ -32,3 +32,5 @@ Thr Apr 30 1998   Brian Dunford-Shore <brian@ibc.wustl.edu>
  o  Release 1.61  Added expires now to content header to disable browser
                   caching.
  o  Release 1.62  Fixed Makefile.PL to not check for Sybase related modules.
+ o  Release 1.63  Install fix.
+ o  Release 1.64  Added forcing a browser window to focus when it is the target.

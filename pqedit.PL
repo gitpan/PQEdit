@@ -30,7 +30,7 @@ print OUT <<'!NO!SUBS!';
 # a perl CGI database table editor
 #
 
-$VERSION = "1.63";
+$VERSION = "1.64";
 sub Version { $VERSION; }
 
 use strict;			# Check for inadvertent global variables
@@ -375,7 +375,8 @@ sub Overview {
 
     print $query->start_html(-title => "PQ Edit Overview for $fullname",
 			     -author => 'brian@ibc.wustl.edu',
-			     -BGCOLOR => $body_bgcolor);
+			     -BGCOLOR => $body_bgcolor,
+			     -onload => 'window.focus();'); # Focus this page
 #			     -onload => 'window.setInterval("location.reload(true)", 1500000);'); # Reload page every fifteen minutes
     print $html_page;
     print PQHidden_Parameters($query,$cgi_param);
@@ -707,7 +708,8 @@ EndHTML
     print $query->start_html(-title => "PQ Edit: $fullname",
 			     -author => 'brian@ibc.wustl.edu',
 			     -script => $javascript,
-			     -BGCOLOR => $body_bgcolor);
+			     -BGCOLOR => $body_bgcolor,
+			     -onload => 'window.focus();'); # Focus this page
     print $html_page;
     print PQHidden_Parameters($query,$cgi_param);
     # Pass old values of primary key fields or of all fields
@@ -1758,7 +1760,9 @@ EndJavaScript
 				 -author => 'brian@ibc.wustl.edu',
 				 -script => $javascript,
 			     -text => 'white',
-				 -BGCOLOR => $body_bgcolor);
+				 -BGCOLOR => $body_bgcolor,
+			     -onload => 'window.focus();'); # Focus this page
+
     print "\n";
     print '<H1 ALIGN="CENTER">PQ Login</H1>'."\n";
     print $query->start_form(-method => 'POST',
@@ -1858,7 +1862,9 @@ sub Login_Error {
     print "\n";
     print $query->start_html(-title => "PQ Login",
 			     -author => 'brian@ibc.wustl.edu',
-			     -BGCOLOR => 'green');
+			     -BGCOLOR => 'green',
+			     -onload => 'window.focus();'); # Focus this page
+
     print "\n";
     print '<H1 ALIGN="CENTER">Login Error</H1>'."\n";
     print "<BIG><BIG>Unable to login to server: <B>",

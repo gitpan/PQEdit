@@ -20,103 +20,14 @@ $Verbose = 1;
 $| = 1;
 my $missing_modules = 0;
 
-print "Checking for CGI..";
-eval {
-    require CGI;
-    #CGI->require_version('2.00');
-};
-if ($@) {
-    print " failed\n";
-    $missing_modules++;
-    print <<EOT;
-$@
-The CGI module provides the CGI web interface.
-
-EOT
-    sleep(2);  # Don't hurry too much
-} else {
-    print " ok\n";
-}
-
-#print "Checking for Sybase::DBlib..";
-#eval {
-#    require Sybase::DBlib;
-#    #Sybase::DBlib->require_version('2.00');
-#};
-#if ($@) {
-#    print " failed\n";
-#    $missing_modules++;
-#    print <<EOT;
-#$@
-#The Sybase::DBlib is currently the only supported database driver interface.
-#
-#EOT
-#    sleep(2);  # Don't hurry too much
-#} else {
-#    print " ok\n";
-#}
-#
-#print "Checking for Apache::Sybase::DBlib..";
-#eval {
-#    require Apache::Sybase::DBlib;
-#    #Apache::Sybase::DBlib->require_version('2.00');
-#};
-#if ($@) {
-#    print " failed\n";
-#    $missing_modules++;
-#    print <<EOT;
-#$@
-#The Apache::Sybase::DBlib is needed for proper web server interaction.
-#
-#EOT
-#    sleep(2);  # Don't hurry too much
-#} else {
-#    print " ok\n";
-#}
-
-print "Checking for RDBAL::Schema..";
-eval {
-    require RDBAL::Schema;
-    RDBAL::Schema::Version() >= '1.10';
-};
-if ($@) {
-    print " failed\n";
-    $missing_modules++;
-    print <<EOT;
-$@
-The RDBAL::Schema module is required for retrieving the database schema.
-
-EOT
-    sleep(2);  # Don't hurry too much
-} else {
-    print " ok\n";
-}
-
-print "Checking for RDBAL..";
-eval {
-    require RDBAL;
-    #RDBAL->require_version('1.00');
-};
-if ($@) {
-    print " failed\n";
-    $missing_modules++;
-    print <<EOT;
-$@
-The RDBAL module is required for database queries.
-
-EOT
-    sleep(2);  # Don't hurry too much
-} else {
-    print " ok\n";
-}
-
-
 WriteMakefile(
 	      'NAME'		=> 'PQEdit',
 	      'DISTNAME'	=> 'PQEdit',
 	      'VERSION_FROM'	=> 'pqedit.PL',
 	      PL_FILES      => { 'pqedit.PL' => 'pqedit.cgi' },
 	      EXE_FILES     => [ 'pqedit.cgi' ],
+	      PREREQ_PM     => { 'CGI' => 2,
+				 'RDBAL::Schema' => 1 },
 	      'clean'       => { FILES => '$(EXE_FILES) pqedit.1 pqedit.html' },
 	      'dist'        => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
 );
